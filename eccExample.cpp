@@ -120,8 +120,8 @@ struct Signature Wallet::sign(std::string str) {
         std::cerr << "error setting signature md" << std::endl;
 
     /* 
-    mdlen is always 32, I don't know why, 
-    see https://www.openssl.org/docs/manmaster/man3/EVP_PKEY_sign.html
+    mdlen is always 32, which is the SHA256_DIGEST_LENGTH, 
+    see openssl/sha.h
     */
     size_t mdlen = 32;
 
