@@ -12,10 +12,9 @@ You may have to modify the compile command based on where your openssl includes 
 #include <openssl/pem.h>
 #include <algorithm>
 #include <iostream>
-#include <string>
 #include <sstream>
 #include <ostream>
-#include <stdio.h>
+#include <cstdio>
 
 class Wallet {
 public:
@@ -26,28 +25,28 @@ public:
     ~Wallet();
 
     void genKeyPair();
-    struct Signature sign(std::string);
-    int verify(std::string, struct Signature, std::string);
+    struct Signature sign(std::string&) const;
+    static int verify(std::string&, struct Signature&, std::string&);
 };
 
 Wallet::Wallet() {
     genKeyPair();
 }
-Wallet::~Wallet(){}
+Wallet::~Wallet()=default;
 
 /* temporary storage for our signature */
 struct Signature {
-    size_t _size;
-    std::string hexsig;
+    size_t _size = 0;
+    std::string hexsig{};
 };
 
 /* high level sha256 method for the SHA256() openssl method */
-std::string sha256(const std::string str)
+std::string sha256(const std::string &str)
 {
     unsigned char hash[SHA256_DIGEST_LENGTH];
     SHA256((unsigned char *)str.c_str(), str.length(), hash);
     std::stringstream ss;
-    for(int i = 0; i < SHA256_DIGEST_LENGTH; i++) {ss << std::hex << (int)hash[i];}
+    for(unsigned char i : hash) {ss << std::hex << (int)i;}
     return ss.str();
 }
 
@@ -63,7 +62,7 @@ void Wallet::genKeyPair() {
 
     /* Generate the key pair */
     EVP_PKEY *pkey = EVP_EC_gen(curve);
-    if (pkey == NULL) {
+    if (pkey == nullptr) {
         std::cerr << "Error generating the ECC key." << std::endl;
         return;
     }
@@ -73,14 +72,14 @@ void Wallet::genKeyPair() {
     BIO *bp = BIO_new(BIO_s_mem());
     const EVP_CIPHER *cipher = EVP_get_cipherbyname(curve);
 
-    if (!PEM_write_bio_PrivateKey(bp, pkey, cipher, NULL, 0, 0, NULL))
+    if (!PEM_write_bio_PrivateKey(bp, pkey, cipher, nullptr, 0, nullptr, nullptr))
         std::cerr << "Error generating keypair." << std::endl;
 
-    n=BIO_read(bp, (void *)privateKeyString, sizeof(privateKeyString));
+    n=BIO_read(bp, (void *)privateKeyString, (int)sizeof(privateKeyString));
     if (n < 0)
         std::cerr << "Error generating keypair." << std::endl;
     
-    privateKey = privateKeyString;
+    privateKey = (char *)privateKeyString;
     BIO_free(bp);
 
     // PUBLIC KEY
@@ -90,31 +89,31 @@ void Wallet::genKeyPair() {
     if (!PEM_write_bio_PUBKEY(bpu, pkey))
         std::cerr << "error generating public key" << std::endl;
 
-    n=BIO_read(bpu, (void *)publicKeyString, sizeof(publicKeyString));
+    n=BIO_read(bpu, (void *)publicKeyString, (int)sizeof(publicKeyString));
     if (n < 0)
         std::cerr << "Error generating keypair." << std::endl;
     
-    publicKey = publicKeyString;
+    publicKey = (char *)publicKeyString;
     
     BIO_free(bpu);
     EVP_PKEY_free(pkey);
 }
 
-struct Signature Wallet::sign(std::string str) {
+struct Signature Wallet::sign(std::string &str) const {
     /* str should be a sha256 hash */
-    unsigned char *md = (unsigned char *)str.c_str();
+    auto *md = (unsigned char *)str.c_str();
    
     /* create private key from private key string */
     const char *mKey = privateKey.c_str();
     BIO* bo = BIO_new( BIO_s_mem() );
-    BIO_write( bo, mKey,strlen(mKey));
-    EVP_PKEY* pkey = 0;
-    PEM_read_bio_PrivateKey( bo, &pkey, 0, 0 );
+    BIO_write( bo, mKey,(int)strlen(mKey));
+    EVP_PKEY* pkey = nullptr;
+    PEM_read_bio_PrivateKey( bo, &pkey, nullptr, nullptr );
     BIO_free(bo);
 
     /* initialize our signature context object */
     EVP_PKEY_CTX *ctx;
-    ctx = EVP_PKEY_CTX_new(pkey, NULL /* no engine */);
+    ctx = EVP_PKEY_CTX_new(pkey, nullptr /* no engine */);
     if (!ctx)
         std::cerr << "error creating ctx" << std::endl;
 
@@ -133,7 +132,7 @@ struct Signature Wallet::sign(std::string str) {
 
     /* Determine buffer length */
     size_t siglen {0};
-    if (EVP_PKEY_sign(ctx, NULL, &siglen, md, mdlen) <= 0)
+    if (EVP_PKEY_sign(ctx, nullptr, &siglen, md, mdlen) <= 0)
         std::cerr << "error determining buffer length" << std::endl;
 
     /* allocate memory for the signature */
@@ -171,7 +170,7 @@ struct Signature Wallet::sign(std::string str) {
     return mysig;
 }
 
-int Wallet::verify(std::string str, Signature signature, std::string publicKeyString) {
+int Wallet::verify(std::string &str, Signature &signature, std::string &publicKeyString) {
 
     /* the easy way to translate your hex string back into your buffer */
     // long len;
@@ -183,18 +182,18 @@ int Wallet::verify(std::string str, Signature signature, std::string publicKeySt
     size_t buflen;
     OPENSSL_hexstr2buf_ex(buf, 256, &buflen, st, '\0');
 
-    /* generate the pubic key using the public key string */
+    /* generate the public key using the public key string */
     const char *mKey = publicKeyString.c_str();
     BIO* bo = BIO_new( BIO_s_mem() );
-    BIO_write( bo, mKey,strlen(mKey));
-    EVP_PKEY* pkey = 0;
-    PEM_read_bio_PUBKEY( bo, &pkey, 0, 0 );
+    BIO_write( bo, mKey,(int)strlen(mKey));
+    EVP_PKEY* pkey = nullptr;
+    PEM_read_bio_PUBKEY( bo, &pkey, nullptr, nullptr );
     /* free memory */
     BIO_free(bo);
 
     /* create the key context */
     EVP_PKEY_CTX *ctx;
-    ctx = EVP_PKEY_CTX_new(pkey, NULL /* no engine */);
+    ctx = EVP_PKEY_CTX_new(pkey, nullptr /* no engine */);
     if (!ctx)
         std::cerr << "ctx error" << std::endl;
 
@@ -207,7 +206,7 @@ int Wallet::verify(std::string str, Signature signature, std::string publicKeySt
         std::cerr << "verify signature error" << std::endl; 
 
     /* Perform operation */
-    unsigned char *md = (unsigned char *)str.c_str();
+    auto *md = (unsigned char *)str.c_str();
     size_t mdlen = 32;
     size_t siglen = signature._size;
     int ret = EVP_PKEY_verify(ctx, buf, siglen, md, mdlen);
@@ -227,7 +226,7 @@ int main() {
     const std::string data = "This is my wonderful message.";
 
     std::string hash = sha256(data);
-    std::cout << "\n\n\ndata to be hashed: " << data << std::endl;
+    std::cout << "\n\nData to be hashed: " << data << std::endl;
     std::cout << "hashed data to be signed: " << hash << "\n" << std::endl;
     Signature signature = wallet.sign(hash);
 
